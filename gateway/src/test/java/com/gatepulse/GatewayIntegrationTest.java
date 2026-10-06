@@ -1,6 +1,7 @@
 package com.gatepulse;
 
 import com.gatepulse.backend.Backend;
+import com.gatepulse.circuitbreaker.CircuitState;
 import com.gatepulse.config.GatewayConfig;
 import com.gatepulse.dummy.DummyBackendServer;
 import org.junit.jupiter.api.AfterEach;
@@ -20,7 +21,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * End-to-end: a real gateway in front of three real dummy backends, all on random ports.
- * Health checks run every 100ms so state changes are observed quickly.
+ * Health checks run every 100ms and circuits re-test after 500ms, so state changes are
+ * observed quickly.
  */
 class GatewayIntegrationTest {
 
@@ -45,7 +47,12 @@ class GatewayIntegrationTest {
                 "HEALTH_CHECK_INTERVAL_MS", "100",
                 "HEALTH_CHECK_TIMEOUT_MS", "500",
                 "HEALTH_UNHEALTHY_THRESHOLD", "2",
-                "HEALTH_HEALTHY_THRESHOLD", "2"));
+                "HEALTH_HEALTHY_THRESHOLD", "2",
+                // This class tests routing and failover, so every request must reach a backend:
+                // the cache and rate limiter are covered in ResilienceIntegrationTest.
+                "CACHE_ENABLED", "false",
+                "RATE_LIMIT_ENABLED", "false",
+                "CB_OPEN_DURATION_MS", "500"));
         gateway = new GatewayServer(config).start();
         http = new HttpTestClient();
         base = "http://127.0.0.1:" + gateway.port();
@@ -107,10 +114,13 @@ class GatewayIntegrationTest {
         Map<String, Integer> afterDetection = sendAndCount(20);
         assertThat(afterDetection).containsOnlyKeys("backend-1", "backend-3");
 
-        // Revive: back in rotation once enough health checks pass.
+        // Revive: back in rotation once enough health checks pass and its circuit (opened by
+        // the failed requests above) has let a trial call through.
         backends.get(1).revive();
         await(() -> gatewayView("backend-2").isHealthy(), Duration.ofSeconds(5), "backend-2 marked healthy again");
-        assertThat(sendAndCount(30)).containsKey("backend-2");
+        await(() -> sendAndCount(6).containsKey("backend-2"), Duration.ofSeconds(5), "backend-2 serving traffic again");
+        await(() -> gateway.breakers().forBackend("backend-2").state() == CircuitState.CLOSED,
+                Duration.ofSeconds(5), "backend-2 circuit closed again");
     }
 
     @Test

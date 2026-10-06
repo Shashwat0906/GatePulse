@@ -1,5 +1,11 @@
 package com.gatepulse.config;
 
+import com.gatepulse.cache.CacheSettings;
+import com.gatepulse.circuitbreaker.CircuitBreakerConfig;
+import com.gatepulse.loadbalancer.LoadBalancingStrategies;
+import com.gatepulse.ratelimit.RateLimitAlgorithm;
+import com.gatepulse.ratelimit.RateLimitConfig;
+
 import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -31,7 +37,13 @@ public record GatewayConfig(
         Duration backendRequestTimeout,
         int maxProxyAttempts,
         boolean trustForwardedHeaders,
-        List<String> corsOrigins) {
+        List<String> corsOrigins,
+        String loadBalancerStrategy,
+        RateLimitConfig rateLimit,
+        CacheSettings cache,
+        CircuitBreakerConfig circuitBreaker,
+        String adminToken,
+        Duration steadyTrafficMaxDuration) {
 
     public static final List<Integer> DEFAULT_EMBEDDED_PORTS = List.of(9001, 9002, 9003);
 
@@ -41,6 +53,7 @@ public record GatewayConfig(
         if (backends.isEmpty()) {
             throw new IllegalArgumentException("At least one backend must be configured");
         }
+        LoadBalancingStrategies.create(loadBalancerStrategy); // validates the name
         long distinctIds = backends.stream().map(BackendDefinition::id).distinct().count();
         if (distinctIds != backends.size()) {
             throw new IllegalArgumentException("Backend ids must be unique: " + backends);
@@ -80,7 +93,37 @@ public record GatewayConfig(
                 r.millis("BACKEND_REQUEST_TIMEOUT_MS", 5000, 10),
                 r.intValue("PROXY_MAX_ATTEMPTS", 3, 1, 10),
                 r.bool("TRUST_FORWARDED_HEADERS", true),
-                r.stringList("CORS_ORIGINS", List.of("*")));
+                r.stringList("CORS_ORIGINS", List.of("*")),
+                r.string("LB_STRATEGY", "round-robin"),
+                new RateLimitConfig(
+                        r.bool("RATE_LIMIT_ENABLED", true),
+                        RateLimitAlgorithm.fromId(r.string("RATE_LIMIT_ALGORITHM", "token-bucket")),
+                        r.intValue("RATE_LIMIT_LIMIT", 100, 1, RateLimitConfig.MAX_LIMIT),
+                        r.doubleValue("RATE_LIMIT_REFILL_PER_SEC", 50),
+                        r.intValue("RATE_LIMIT_WINDOW_MS", 1000, 1, (int) RateLimitConfig.MAX_WINDOW_MILLIS)),
+                new CacheSettings(
+                        r.bool("CACHE_ENABLED", true),
+                        r.intValue("CACHE_TTL_MS", 5000, 1, (int) CacheSettings.MAX_TTL_MILLIS),
+                        r.intValue("CACHE_CAPACITY", 500, 1, CacheSettings.MAX_CAPACITY)),
+                new CircuitBreakerConfig(
+                        r.intValue("CB_FAILURE_THRESHOLD", 5, 1, 1000),
+                        r.millis("CB_OPEN_DURATION_MS", 10_000, 1),
+                        r.intValue("CB_HALF_OPEN_TRIALS", 3, 1, 100)),
+                r.string("ADMIN_TOKEN", null),
+                Duration.ofSeconds(r.intValue("STEADY_TRAFFIC_MAX_SECONDS", 300, 1, 86_400)));
+    }
+
+    /** Whether admin changes require a token (otherwise: open demo mode). */
+    public boolean adminTokenRequired() {
+        return adminToken != null && !adminToken.isBlank();
+    }
+
+    /** Never print the admin token in logs. */
+    @Override
+    public String toString() {
+        return "GatewayConfig[port=" + port + ", mode=" + mode + ", backends=" + backends
+                + ", loadBalancer=" + loadBalancerStrategy + ", rateLimit=" + rateLimit + ", cache=" + cache
+                + ", circuitBreaker=" + circuitBreaker + ", adminTokenRequired=" + adminTokenRequired() + "]";
     }
 
     private static List<BackendDefinition> embeddedBackends(List<Integer> ports, List<Integer> weights) {
@@ -134,6 +177,23 @@ public record GatewayConfig(
         private String raw(String key) {
             String value = env.get(key);
             return value == null || value.isBlank() ? null : value.trim();
+        }
+
+        String string(String key, String defaultValue) {
+            String value = raw(key);
+            return value == null ? defaultValue : value;
+        }
+
+        double doubleValue(String key, double defaultValue) {
+            String value = raw(key);
+            if (value == null) {
+                return defaultValue;
+            }
+            try {
+                return Double.parseDouble(value);
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException(key + " must be a number but was '" + value + "'", e);
+            }
         }
 
         String required(String key) {

@@ -2,6 +2,9 @@ package com.gatepulse.proxy;
 
 import com.gatepulse.backend.Backend;
 import com.gatepulse.backend.BackendRegistry;
+import com.gatepulse.circuitbreaker.CircuitBreakerConfig;
+import com.gatepulse.circuitbreaker.CircuitBreakerRegistry;
+import com.gatepulse.circuitbreaker.CircuitState;
 import com.gatepulse.core.FilterChain;
 import com.gatepulse.core.GatewayResponse;
 import com.gatepulse.core.RequestContext;
@@ -15,6 +18,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.net.ConnectException;
 import java.net.http.HttpTimeoutException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -36,12 +40,18 @@ class ProxyFilterTest {
     private BackendClient client;
 
     private BackendRegistry registry;
+    private CircuitBreakerRegistry breakers;
     private ProxyFilter proxy;
 
     @BeforeEach
     void setUp() {
         registry = new BackendRegistry(List.of(definition("b1", 1), definition("b2", 1), definition("b3", 1)));
-        proxy = new ProxyFilter(new LoadBalancer(registry, new RoundRobinStrategy()), client, 3);
+        breakers = new CircuitBreakerRegistry(List.of("b1", "b2", "b3"),
+                new CircuitBreakerConfig(2, Duration.ofMinutes(1), 1));
+        // Same eligibility rule as production: healthy and circuit not open.
+        LoadBalancer lb = new LoadBalancer(registry, new RoundRobinStrategy(),
+                b -> b.isHealthy() && breakers.forBackend(b.id()).allowsTraffic());
+        proxy = new ProxyFilter(lb, breakers, client, 3);
     }
 
     private Backend get(String id) {
@@ -177,6 +187,50 @@ class ProxyFilterTest {
         assertThat(response.status()).isEqualTo(500);
         assertThat(response.header("X-Gateway-Backend")).isEqualTo("b1");
         verify(client, times(1)).send(any(), any());
+    }
+
+    @Test
+    void repeatedFailuresOpenTheCircuitAndTrafficStopsGoingThere() throws Exception {
+        when(client.send(any(), any())).thenAnswer(inv ->
+                inv.getArgument(0, Backend.class).id().equals("b1") ? status(503) : ok());
+
+        // Every request still succeeds thanks to failover, while b1 collects failures.
+        for (int i = 0; i < 6; i++) {
+            assertThat(run(request("GET")).status()).isEqualTo(200);
+        }
+        assertThat(breakers.forBackend("b1").state()).isEqualTo(CircuitState.OPEN);
+
+        org.mockito.Mockito.clearInvocations(client);
+        for (int i = 0; i < 10; i++) {
+            run(request("GET"));
+        }
+        verify(client, never()).send(eq(get("b1")), any());
+    }
+
+    @Test
+    void returns503FastWhenEveryCircuitIsOpen() throws Exception {
+        when(client.send(any(), any())).thenReturn(status(500));
+        // Enough failing requests to open all three circuits (threshold 2).
+        for (int i = 0; i < 3; i++) {
+            run(request("GET"));
+        }
+        assertThat(registry.all()).allMatch(b -> breakers.forBackend(b.id()).state() == CircuitState.OPEN);
+        org.mockito.Mockito.clearInvocations(client);
+
+        GatewayResponse response = run(request("GET"));
+
+        assertThat(response.status()).isEqualTo(503);
+        assertThat(new String(response.body())).contains("no_backend_available");
+        verify(client, never()).send(any(), any());
+    }
+
+    @Test
+    void clientErrorsCountAsSuccessForTheBreaker() throws Exception {
+        when(client.send(any(), any())).thenReturn(status(404));
+        for (int i = 0; i < 9; i++) {
+            run(request("GET"));
+        }
+        assertThat(registry.all()).allMatch(b -> breakers.forBackend(b.id()).state() == CircuitState.CLOSED);
     }
 
     @Test

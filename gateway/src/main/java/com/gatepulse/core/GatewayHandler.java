@@ -25,6 +25,7 @@ public final class GatewayHandler implements Handler {
 
     public static final String REQUEST_ID_HEADER = "X-Request-Id";
     public static final String API_KEY_HEADER = "X-API-Key";
+    private static final int MAX_API_KEY_LENGTH = 128;
 
     /** Accept a caller's request id only if it is short and harmless to log. */
     private static final Pattern SAFE_REQUEST_ID = Pattern.compile("[A-Za-z0-9._-]{1,64}");
@@ -65,7 +66,7 @@ public final class GatewayHandler implements Handler {
     RequestContext toRequestContext(Context ctx, String requestId) {
         String clientIp = clientIp(ctx.header("X-Forwarded-For"), ctx.ip());
         String apiKey = ctx.header(API_KEY_HEADER);
-        String clientKey = apiKey != null && !apiKey.isBlank() ? "key:" + apiKey.trim() : "ip:" + clientIp;
+        String clientKey = apiKey != null && !apiKey.isBlank() ? "key:" + boundedKey(apiKey.trim()) : "ip:" + clientIp;
 
         Map<String, String> headers = ctx.headerMap();
         return RequestContext.builder()
@@ -94,6 +95,11 @@ public final class GatewayHandler implements Handler {
             }
         }
         return remoteAddress;
+    }
+
+    /** Caps key length so a client cannot bloat the rate limiter's per-client map with huge keys. */
+    private static String boundedKey(String apiKey) {
+        return apiKey.length() <= MAX_API_KEY_LENGTH ? apiKey : apiKey.substring(0, MAX_API_KEY_LENGTH);
     }
 
     static String requestIdFor(String incoming) {

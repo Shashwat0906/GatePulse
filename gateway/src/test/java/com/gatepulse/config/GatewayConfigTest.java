@@ -57,7 +57,41 @@ class GatewayConfigTest {
         assertThatThrownBy(() -> GatewayConfig.fromEnv(Map.of("MODE", "external", "BACKEND_URLS", "not a url")))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> GatewayConfig.fromEnv(Map.of("BACKEND_WEIGHTS", "0,1,1")))
-                .hasMessageContaining("weight must be >= 1");
+                .hasMessageContaining("weight must be between 1 and 100");
+        assertThatThrownBy(() -> GatewayConfig.fromEnv(Map.of("LB_STRATEGY", "random")))
+                .hasMessageContaining("Unknown load balancing strategy");
+        assertThatThrownBy(() -> GatewayConfig.fromEnv(Map.of("RATE_LIMIT_ALGORITHM", "leaky-bucket")))
+                .hasMessageContaining("Unknown rate limit algorithm");
+    }
+
+    @Test
+    void parsesResilienceSettings() {
+        GatewayConfig config = GatewayConfig.fromEnv(Map.of(
+                "LB_STRATEGY", "least-connections",
+                "RATE_LIMIT_ALGORITHM", "sliding-window",
+                "RATE_LIMIT_LIMIT", "20",
+                "RATE_LIMIT_WINDOW_MS", "2000",
+                "CACHE_TTL_MS", "1500",
+                "CACHE_CAPACITY", "50",
+                "CB_FAILURE_THRESHOLD", "7",
+                "CB_OPEN_DURATION_MS", "3000",
+                "ADMIN_TOKEN", "s3cret"));
+
+        assertThat(config.loadBalancerStrategy()).isEqualTo("least-connections");
+        assertThat(config.rateLimit().algorithm()).isEqualTo(com.gatepulse.ratelimit.RateLimitAlgorithm.SLIDING_WINDOW_LOG);
+        assertThat(config.rateLimit().limit()).isEqualTo(20);
+        assertThat(config.rateLimit().windowMillis()).isEqualTo(2000);
+        assertThat(config.cache().ttlMillis()).isEqualTo(1500);
+        assertThat(config.cache().capacity()).isEqualTo(50);
+        assertThat(config.circuitBreaker().failureThreshold()).isEqualTo(7);
+        assertThat(config.circuitBreaker().openDuration()).isEqualTo(Duration.ofSeconds(3));
+        assertThat(config.adminTokenRequired()).isTrue();
+        assertThat(config.toString()).doesNotContain("s3cret");
+    }
+
+    @Test
+    void adminTokenIsOptional() {
+        assertThat(GatewayConfig.fromEnv(Map.of()).adminTokenRequired()).isFalse();
     }
 
     @Test

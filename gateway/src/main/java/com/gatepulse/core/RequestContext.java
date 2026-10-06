@@ -1,6 +1,7 @@
 package com.gatepulse.core;
 
 import com.gatepulse.backend.Backend;
+import com.gatepulse.cache.CacheStatus;
 
 import java.util.Collections;
 import java.util.Map;
@@ -14,7 +15,7 @@ import java.util.TreeMap;
  * captured once from the HTTP layer, so filters never touch Javalin directly. That keeps
  * filters framework-independent and easy to unit-test with a hand-built context.
  *
- * <p>A few mutable "notes" ({@link #servedBy()}, {@link #attempts()}) let filters record what
+ * <p>A few mutable "notes" ({@link #servedBy()}, {@link #attempts()}, {@link #cacheStatus()}) let filters record what
  * happened, for response headers, logs and metrics. A context belongs to exactly one request
  * and one thread at a time, so these notes need no synchronization.
  */
@@ -32,6 +33,7 @@ public final class RequestContext {
 
     private Backend servedBy;
     private int attempts;
+    private CacheStatus cacheStatus;
 
     private RequestContext(Builder b) {
         this.requestId = Objects.requireNonNull(b.requestId, "requestId");
@@ -112,6 +114,15 @@ public final class RequestContext {
 
     public void setAttempts(int attempts) {
         this.attempts = attempts;
+    }
+
+    /** What the cache did for this request, or {@code null} if it never reached the cache. */
+    public CacheStatus cacheStatus() {
+        return cacheStatus;
+    }
+
+    public void setCacheStatus(CacheStatus cacheStatus) {
+        this.cacheStatus = cacheStatus;
     }
 
     public static final class Builder {
