@@ -119,8 +119,12 @@ class GatewayIntegrationTest {
         backends.get(1).revive();
         await(() -> gatewayView("backend-2").isHealthy(), Duration.ofSeconds(5), "backend-2 marked healthy again");
         await(() -> sendAndCount(6).containsKey("backend-2"), Duration.ofSeconds(5), "backend-2 serving traffic again");
-        await(() -> gateway.breakers().forBackend("backend-2").state() == CircuitState.CLOSED,
-                Duration.ofSeconds(5), "backend-2 circuit closed again");
+        // The breaker only changes state when traffic arrives (no timer threads), so keep sending
+        // until enough half-open trial calls have succeeded.
+        await(() -> {
+            sendAndCount(3);
+            return gateway.breakers().forBackend("backend-2").state() == CircuitState.CLOSED;
+        }, Duration.ofSeconds(5), "backend-2 circuit closed again");
     }
 
     @Test
