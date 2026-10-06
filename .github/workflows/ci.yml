@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gateway:
+    name: Gateway build & tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gateway
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Build and run tests
+        run: mvn -B verify
+
+      - name: Test summary
+        if: always()
+        run: |
+          python3 - <<'EOF'
+          import glob, xml.etree.ElementTree as ET
+          rows, totals = [], [0, 0, 0, 0]
+          for f in sorted(glob.glob("target/surefire-reports/TEST-*.xml")):
+              s = ET.parse(f).getroot()
+              t, fl, e, sk = (int(s.get(k, 0)) for k in ("tests", "failures", "errors", "skipped"))
+              totals = [a + b for a, b in zip(totals, (t, fl, e, sk))]
+              rows.append(f"| {s.get('name').split('.')[-1]} | {t} | {fl} | {e} | {sk} | {float(s.get('time', 0)):.2f}s |")
+          out = ["| Test class | Tests | Failures | Errors | Skipped | Time |", "|---|---|---|---|---|---|", *rows,
+                 f"| **Total** | **{totals[0]}** | **{totals[1]}** | **{totals[2]}** | **{totals[3]}** | |"]
+          print("\n".join(out))
+          import os
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as fh:
+              fh.write("## Gateway tests\n\n" + "\n".join(out) + "\n")
+          EOF
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: gateway/target/surefire-reports
+          if-no-files-found: ignore
+
+  docker:
+    name: Docker image builds
+    runs-on: ubuntu-latest
+    needs: gateway
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build gateway image
+        run: docker build -t gatepulse-gateway:ci gateway
+
+      - name: Smoke test the image (embedded mode)
+        run: |
+          docker run -d --name gp -p 8080:8080 gatepulse-gateway:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8080/health > /dev/null; then break; fi
+            sleep 1
+          done
+          curl -fsS http://localhost:8080/health
+          echo
+          for i in 1 2 3; do
+            curl -fsS -D - -o /dev/null http://localhost:8080/products | grep -i '^x-gateway-backend'
+          done
+          docker stop gp
+          docker logs gp | tail -20
