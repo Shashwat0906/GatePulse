@@ -1,0 +1,148 @@
+@import "@fontsource/schibsted-grotesk/400.css";
+@import "@fontsource/schibsted-grotesk/500.css";
+@import "@fontsource/schibsted-grotesk/600.css";
+@import "@fontsource/schibsted-grotesk/700.css";
+@import "tailwindcss";
+
+/*
+  Design tokens. Every color in the UI is a role, defined once per theme.
+  Chart series use the validated categorical palette (light and dark steps are
+  chosen separately, not flipped). Status colors are reserved for health and
+  circuit state and always ship with an icon and a word, never color alone.
+*/
+:root {
+  color-scheme: light;
+  --page: #edf0f3;
+  --surface: #fbfcfd;
+  --surface-sunk: #f3f5f8;
+  --ink: #151a21;
+  --ink-2: #4f5763;
+  --muted: #6b7380;
+  --line: #dce1e7;
+  --line-strong: #c3cad3;
+  --focus: #2a78d6;
+
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+
+  --good: #0ca30c;
+  --good-text: #006300;
+  --warning: #fab219;
+  --warning-text: #8a5a00;
+  --serious: #ec835a;
+  --serious-text: #a6431c;
+  --critical: #d03b3b;
+  --critical-text: #b42d2d;
+
+  --good-wash: rgb(12 163 12 / 0.1);
+  --warning-wash: rgb(250 178 25 / 0.16);
+  --critical-wash: rgb(208 59 59 / 0.1);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #111419;
+  --surface: #1a1e24;
+  --surface-sunk: #15181d;
+  --ink: #f1f3f6;
+  --ink-2: #b6bdc7;
+  --muted: #8d95a1;
+  --line: #2a3038;
+  --line-strong: #3a424c;
+  --focus: #5598e7;
+
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+
+  --good-text: #3fc23f;
+  --warning-text: #fab219;
+  --serious-text: #ec835a;
+  --critical-text: #ec6b6b;
+
+  --good-wash: rgb(12 163 12 / 0.16);
+  --warning-wash: rgb(250 178 25 / 0.14);
+  --critical-wash: rgb(208 59 59 / 0.18);
+}
+
+@theme inline {
+  --font-sans: "Schibsted Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --color-page: var(--page);
+  --color-surface: var(--surface);
+  --color-sunk: var(--surface-sunk);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-good: var(--good);
+  --color-good-text: var(--good-text);
+  --color-warning: var(--warning);
+  --color-warning-text: var(--warning-text);
+  --color-serious: var(--serious);
+  --color-serious-text: var(--serious-text);
+  --color-critical: var(--critical);
+  --color-critical-text: var(--critical-text);
+  --color-s1: var(--series-1);
+  --color-s2: var(--series-2);
+  --color-s3: var(--series-3);
+  --color-s4: var(--series-4);
+}
+
+html {
+  background: var(--page);
+}
+
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The one orchestrated motion: a ring that pulses out when a circuit changes state. */
+@keyframes circuit-pulse {
+  0% { box-shadow: 0 0 0 0 var(--pulse-color); }
+  100% { box-shadow: 0 0 0 10px transparent; }
+}
+.circuit-pulse {
+  animation: circuit-pulse 900ms ease-out 2;
+}
+
+/* The request path's flow line: a quiet dash drift while traffic is flowing. */
+@keyframes flow {
+  to { stroke-dashoffset: -16; }
+}
+.flowing {
+  stroke-dasharray: 4 4;
+  animation: flow 700ms linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .circuit-pulse,
+  .flowing {
+    animation: none;
+  }
+}
+
+/* Recharts focus outlines on SVG wrappers are noise; keyboard users get the table view instead. */
+.recharts-wrapper:focus,
+.recharts-surface:focus {
+  outline: none;
+}

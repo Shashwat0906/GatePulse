@@ -178,7 +178,7 @@ public final class GatewayServer implements AutoCloseable {
                 RATE_LIMIT_EVICTION_SECONDS, RATE_LIMIT_EVICTION_SECONDS, TimeUnit.SECONDS);
 
         if (!adminAuth.required()) {
-            log.warn("event=admin_open msg=\"ADMIN_TOKEN is not set: admin changes are allowed without a token (demo mode)\"");
+            log.warn("event=admin_open note=\"ADMIN_TOKEN is not set, so admin changes need no token (open demo mode)\"");
         }
         log.info("event=gateway_started port={} config={}", app.port(), config);
         return this;

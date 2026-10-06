@@ -71,6 +71,27 @@ jobs:
           path: gateway/target/surefire-reports
           if-no-files-found: ignore
 
+  dashboard:
+    name: Dashboard lint & build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - run: npm ci --no-audit --no-fund
+      - run: npm run lint
+      - run: npm run build
+        env:
+          VITE_API_URL: https://gatepulse-gateway.onrender.com
+
   docker:
     name: Docker image builds
     runs-on: ubuntu-latest
@@ -80,6 +101,9 @@ jobs:
 
       - name: Build gateway image
         run: docker build -t gatepulse-gateway:ci gateway
+
+      - name: Build dashboard image
+        run: docker build -t gatepulse-dashboard:ci dashboard
 
       - name: Smoke test the image (embedded mode)
         run: |
