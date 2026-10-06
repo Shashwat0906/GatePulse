@@ -57,6 +57,9 @@ for scenario in ("steady", "spike", "failover"):
         "checks": checks.get("value"),
         "codes": ", ".join(f"{c}: {n:,}" for c, n in sorted(codes.items())),
         "thresholds": "pass" if passed else "FAIL",
+        "circuit": " / ".join(
+            f"{e['backendId']} {e['from']}->{e['to']}" for e in reversed(gateway.get("circuitEvents", []))
+        ) or "none",
     })
 
 out = [
@@ -81,9 +84,19 @@ if summary_path:
     with open(summary_path, "a") as fh:
         fh.write(markdown + "\n")
 
+if rows and any(r["circuit"] != "none" for r in rows):
+    out_circuit = ["", "Circuit breaker transitions recorded by the gateway during each run:", ""]
+    out_circuit += [f"- **{r['scenario']}**: {r['circuit']}" for r in rows]
+    extra = "\n".join(out_circuit)
+    print(extra)
+    if summary_path:
+        with open(summary_path, "a") as fh:
+            fh.write(extra + "\n")
+
+print(f"::notice title=machine::{machine}")
 for r in rows:
     print(
-        f"::notice title=k6 {r['scenario']}::{r['requests']} requests, {r['rate']:.0f} req/s, "
+        f"::notice title=k6 {r['scenario']}::circuit [{r['circuit']}] {r['requests']} requests, {r['rate']:.0f} req/s, "
         f"p50 {ms(r['p50'])}, p95 {ms(r['p95'])}, p99 {ms(r['p99'])}, failed {pct(r['failed'])}, "
         f"checks {pct(r['checks'])}, codes [{r['codes']}], thresholds {r['thresholds']}"
     )

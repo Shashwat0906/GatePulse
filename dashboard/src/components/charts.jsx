@@ -248,7 +248,11 @@ export function LatencyChart({ timeline, latency, colors }) {
   return (
     <ChartFrame
       title="Latency percentiles"
-      description={`Last 10 seconds: p50 ${formatMs(latency.p50)}, p95 ${formatMs(latency.p95)}, p99 ${formatMs(latency.p99)}`}
+      description={
+        latency.samples === 0
+          ? 'No requests in the last 10 seconds'
+          : `Last 10 seconds: p50 ${formatMs(latency.p50)}, p95 ${formatMs(latency.p95)}, p99 ${formatMs(latency.p99)}`
+      }
       legend={LATENCY_SERIES.map((s) => ({ label: s.label, color: colors[s.color], shape: 'line' }))}
       table={
         <DataTable

@@ -1,0 +1,65 @@
+# One command runs the whole system locally:
+#   docker compose up --build
+# Dashboard: http://localhost:5173   Gateway: http://localhost:8080
+#
+# The gateway runs in MODE=external and talks to three separate backend containers. All four
+# Java services use the same image; the backends just start a different main class.
+
+x-gateway-image: &gateway-image
+  image: gatepulse-gateway:local
+  build: ./gateway
+
+x-backend: &backend
+  <<: *gateway-image
+  entrypoint: ["java", "-XX:MaxRAMPercentage=75", "-cp", "/app/gatepulse.jar", "com.gatepulse.dummy.DummyBackendServer"]
+  restart: unless-stopped
+
+services:
+  backend-1:
+    <<: *backend
+    environment:
+      PORT: "8080"
+      BACKEND_ID: backend-1
+
+  backend-2:
+    <<: *backend
+    environment:
+      PORT: "8080"
+      BACKEND_ID: backend-2
+
+  backend-3:
+    <<: *backend
+    environment:
+      PORT: "8080"
+      BACKEND_ID: backend-3
+
+  gateway:
+    <<: *gateway-image
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      MODE: external
+      BACKEND_URLS: http://backend-1:8080,http://backend-2:8080,http://backend-3:8080
+      BACKEND_WEIGHTS: "1,1,1"
+      CORS_ORIGINS: http://localhost:5173
+      # Set a token to require it for admin changes (enter it in the dashboard under "Admin token").
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+    depends_on:
+      backend-1:
+        condition: service_healthy
+      backend-2:
+        condition: service_healthy
+      backend-3:
+        condition: service_healthy
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: ./dashboard
+      args:
+        VITE_API_URL: http://localhost:8080
+    ports:
+      - "5173:80"
+    depends_on:
+      - gateway

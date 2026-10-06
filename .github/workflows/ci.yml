@@ -119,3 +119,14 @@ jobs:
           done
           docker stop gp
           docker logs gp | tail -20
+
+      - name: Smoke test docker compose (external mode, 3 backend containers)
+        run: |
+          docker compose up -d --build --wait --wait-timeout 240
+          curl -fsS http://localhost:8080/health
+          echo
+          for i in 1 2 3; do
+            curl -fsS -D - -o /dev/null -H 'Cache-Control: no-cache' http://localhost:8080/products | grep -i '^x-gateway-backend'
+          done
+          curl -fsS -o /dev/null -w "dashboard HTTP %{http_code}\n" http://localhost:5173/
+          docker compose down

@@ -22,6 +22,7 @@ export function formatMs(ms) {
   if (ms === null || ms === undefined) return '–'
   if (ms >= 1000) return `${(ms / 1000).toFixed(2)} s`
   if (ms >= 100) return `${Math.round(ms)} ms`
+  if (ms < 0.1) return '<0.1 ms'
   return `${ms.toFixed(1)} ms`
 }
 

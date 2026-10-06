@@ -1,0 +1,24 @@
+# Render Blueprint for the gateway (Dashboard -> New -> Blueprint, pick this repo).
+# The free plan runs one container, so the gateway starts its three demo backends
+# inside the same JVM (MODE=embedded).
+services:
+  - type: web
+    name: gatepulse-gateway
+    runtime: docker
+    plan: free
+    rootDir: gateway
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: MODE
+        value: embedded
+      # Your Vercel dashboard URL, e.g. https://gatepulse.vercel.app (comma-separate several).
+      - key: CORS_ORIGINS
+        sync: false
+      # Optional. When set, the dashboard needs this token for changes and chaos actions.
+      - key: ADMIN_TOKEN
+        sync: false
+      - key: JAVA_OPTS
+        value: "-XX:MaxRAMPercentage=70 -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError -Xss512k"
