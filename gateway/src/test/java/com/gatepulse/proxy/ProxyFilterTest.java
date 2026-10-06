@@ -15,6 +15,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.net.ConnectException;
 import java.net.http.HttpTimeoutException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -85,29 +86,42 @@ class ProxyFilterTest {
 
     @Test
     void getFailsOverToAnotherBackendWhenConnectionRefused() throws Exception {
-        when(client.send(eq(get("b1")), any())).thenThrow(new ConnectException("refused"));
-        when(client.send(eq(get("b2")), any())).thenReturn(ok());
+        // b1 is dead; every other backend answers. Which one gets the retry is the
+        // strategy's business, so the test only asserts "not b1".
+        when(client.send(any(), any())).thenAnswer(inv -> {
+            if (inv.getArgument(0, Backend.class).id().equals("b1")) {
+                throw new ConnectException("refused");
+            }
+            return ok();
+        });
 
         GatewayResponse response = run(request("GET"));
 
         assertThat(response.status()).isEqualTo(200);
-        assertThat(response.header("X-Gateway-Backend")).isEqualTo("b2");
+        assertThat(response.header("X-Gateway-Backend")).isNotEqualTo("b1");
         assertThat(response.header("X-Gateway-Attempts")).isEqualTo("2");
         assertThat(get("b1").failedRequests()).isEqualTo(1);
         assertThat(get("b1").activeConnections()).isZero();
     }
 
     @Test
-    void getFailsOverOnServerErrorAndTimeout() throws Exception {
-        when(client.send(eq(get("b1")), any())).thenReturn(status(503));
-        when(client.send(eq(get("b2")), any())).thenThrow(new HttpTimeoutException("timed out"));
-        when(client.send(eq(get("b3")), any())).thenReturn(ok());
+    void getFailsOverOnServerErrorAndTimeoutToThreeDistinctBackends() throws Exception {
+        List<Backend> called = new ArrayList<>();
+        when(client.send(any(), any())).thenAnswer(inv -> {
+            called.add(inv.getArgument(0, Backend.class));
+            return switch (called.size()) {
+                case 1 -> status(503);
+                case 2 -> throw new HttpTimeoutException("timed out");
+                default -> ok();
+            };
+        });
 
         GatewayResponse response = run(request("GET"));
 
         assertThat(response.status()).isEqualTo(200);
-        assertThat(response.header("X-Gateway-Backend")).isEqualTo("b3");
         assertThat(response.header("X-Gateway-Attempts")).isEqualTo("3");
+        assertThat(called).as("each retry goes to a backend not tried before").doesNotHaveDuplicates().hasSize(3);
+        assertThat(response.header("X-Gateway-Backend")).isEqualTo(called.get(2).id());
     }
 
     @Test
