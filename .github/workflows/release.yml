@@ -1,0 +1,46 @@
+name: Release jar
+
+# Publishes the runnable gateway jar:
+#  - pushing a tag like v1.0.0 creates a GitHub Release with gatepulse.jar attached;
+#  - running the workflow manually refreshes a draft "snapshot" release from the current main.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  jar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Build jar
+        working-directory: gateway
+        run: mvn -B -q package -DskipTests
+
+      - name: Publish tagged release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" gateway/target/gatepulse.jar \
+            --title "GatePulse $GITHUB_REF_NAME" --generate-notes
+
+      - name: Refresh draft snapshot
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete snapshot --yes --cleanup-tag 2>/dev/null || true
+          gh release create snapshot gateway/target/gatepulse.jar --draft \
+            --title "Snapshot (${GITHUB_SHA::7})" \
+            --notes "Untagged build of ${GITHUB_SHA} for local testing."
