@@ -17,17 +17,29 @@ jobs:
       run:
         working-directory: gateway
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
           cache: maven
 
       - name: Build and run tests
-        run: mvn -B verify
+        run: |
+          set -o pipefail
+          mvn -B verify 2>&1 | tee build.log
+
+      - name: Annotate build errors
+        if: failure()
+        run: |
+          # Surface compiler errors and test failures as annotations on the run page.
+          grep -E "^\[ERROR\]|<<< (FAILURE|ERROR)|expected|but was|Exception" build.log \
+            | grep -v "Help 1\|re-run Maven\|full stack trace\|^\[ERROR\] *$" \
+            | head -80 > errors.txt || true
+          msg=$(sed ':a;N;$!ba;s/%/%25/g;s/\r//g;s/\n/%0A/g' errors.txt)
+          echo "::error title=Build failed::${msg}"
 
       - name: Test summary
         if: always()
@@ -46,11 +58,14 @@ jobs:
           import os
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as fh:
               fh.write("## Gateway tests\n\n" + "\n".join(out) + "\n")
+          if rows:
+              plain = "%0A".join(r.replace("|", " ").strip() for r in rows)
+              print(f"::notice title=Tests: {totals[0]} run, {totals[1]} failed, {totals[2]} errors, {totals[3]} skipped::{plain}")
           EOF
 
       - name: Upload test reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: surefire-reports
           path: gateway/target/surefire-reports
@@ -61,7 +76,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: gateway
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Build gateway image
         run: docker build -t gatepulse-gateway:ci gateway
