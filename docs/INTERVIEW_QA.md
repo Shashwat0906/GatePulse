@@ -236,7 +236,18 @@ the gateway, so the numbers are conservative, and the README says so.
 
 ---
 
-### 16. What would you do differently, or next?
+### 16. What happens when the gateway is overloaded?
+
+I found out by measuring it. On a 4-vCPU CI runner, where k6, the gateway and all three backends
+share the CPUs, the steady test is clean up to 4,000 req/s (p95 about 1 ms, zero errors). At
+5,000 req/s the machine saturates: backend calls time out, every circuit opens, and about 14% of
+requests get a fast `503` instead of hanging. That's the breaker doing its job (failing fast
+instead of piling up threads), but it also shows its limit. When *every* backend is slow because
+of shared overload, opening every circuit makes things worse, not better. The fix is an adaptive
+concurrency limit (like Netflix's concurrency-limits or TCP congestion control) that sheds only the
+excess load. I'd reach for that next.
+
+### 17. What would you do differently, or next?
 
 - Idempotency keys so POSTs can be retried safely.
 - Distributed rate limiting with Redis, and config persistence.
