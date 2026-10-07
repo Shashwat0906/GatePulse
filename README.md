@@ -6,6 +6,10 @@ Bucket4j, Hystrix or Guava). A React console streams the gateway's traffic in re
 chaos buttons: kill a backend in the middle of a load test and watch the gateway route around it
 with no client-visible errors.
 
+**Live demo:** [dashboard on Vercel](https://gate-pulse-lake.vercel.app/), talking to the
+[gateway on Render](https://gatepulse-gateway.onrender.com/health). Both run on free tiers: if the
+gateway has been idle, the dashboard shows *"Waking up the gateway…"* for 30-60 seconds first.
+
 [![CI](https://github.com/Shashwat0906/GatePulse/actions/workflows/ci.yml/badge.svg)](https://github.com/Shashwat0906/GatePulse/actions/workflows/ci.yml)
 ![Java 21](https://img.shields.io/badge/Java-21-blue)
 ![Tests](https://img.shields.io/badge/tests-138%20passing-brightgreen)
